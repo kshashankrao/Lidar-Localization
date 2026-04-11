@@ -1,0 +1,12 @@
+{
+    "GT_POSE_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/oxts/data",
+    "PCD_INPUT_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/velodyne_points/data",
+    "KITTI_CALIB_VELO_TO_CAM": "/mnt/d/kitti/2011_10_03_calib/2011_10_03/calib_velo_to_cam.txt",
+    
+    "PCD_OUTPUT_PATH": "/mnt/d/DeepLearning/Lidar-Localization/data/pcd_files",
+    "POSES_OUTPUT_PATH": "estimated_poses.txt",
+
+    "TOTAL_FRAMES_TO_PROCESS": 1000,
+
+    "VOXEL_LEAF_SIZE": 0.2
+}

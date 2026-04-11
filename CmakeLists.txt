@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.14)
+project(lidar_localization LANGUAGES C CXX)
+
+# 1. Enforce C++17 (Required for std::filesystem in your data loader)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF) # Disables compiler-specific extensions for portability
+
+# Eigen 
+find_package(Eigen3 REQUIRED)
+
+# PCL
+find_package(MPI REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io filters registration visualization)
+find_package(nlohmann_json REQUIRED)
+add_definitions(${PCL_DEFINITIONS})
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+# Set output directory for executable to build/bin BEFORE creating the executable
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+add_executable(lidar_localization ${SOURCES})
+
+target_include_directories(lidar_localization PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(lidar_localization PRIVATE 
+    Eigen3::Eigen
+    ${PCL_LIBRARIES}
+    MPI::MPI_C
+    nlohmann_json::nlohmann_json
+)
+
+# Copy config directory to build/bin after build
+add_custom_command(TARGET lidar_localization POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/config
+    ${CMAKE_BINARY_DIR}/bin/config
+    COMMENT "Copying config folder to build/bin"
+)

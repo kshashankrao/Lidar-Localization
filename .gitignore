@@ -1,0 +1,8 @@
+*.pcd
+*.bin
+data/
+venv/
+build/
+*.mp4
+*.avi
+__pycache__/
