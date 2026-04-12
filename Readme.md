@@ -41,6 +41,8 @@ Frames Evaluated : 1000
     - Translation Error: 7.077 %
     - Rotation Error   : 38.061 deg/100m
 
+    ![Output](readme/output.gif)
+
 ## Future Work
 1. Implement Kalman filter to fuse IMU and LIDAR pose estimation.
 2. Optimize ICP parameters for better accuracy.
