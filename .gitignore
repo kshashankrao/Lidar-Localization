@@ -6,3 +6,8 @@ build/
 *.mp4
 *.avi
 __pycache__/
+tmp*
+estimated_poses.txt
+poses_*.txt
+optuna_results.csv
+optuna_plots/

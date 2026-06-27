@@ -9,7 +9,7 @@
 #include <pcl/search/kdtree.h>
 #include <pcl/registration/icp.h> 
 
-void PointToPlaneICP::filterPointCloud(pcl::PointCloud<pcl::PointXYZI>::Ptr &cloud)
+void PointToPlaneICP::filterPointCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr &cloud)
 {
     // The voxel grid filter reduces the number of points in the point cloud by creating a 
     // 3D grid over the data and replacing all points within each voxel with their centroid.
@@ -30,39 +30,45 @@ void PointToPlaneICP::cloud_with_normal(pcl::PointCloud<pcl::PointXYZ>::Ptr& clo
     n.setNumberOfThreads(10);
     n.setInputCloud(cloud);
     n.setSearchMethod(tree);
-    n.setKSearch(30);
+    n.setKSearch(normal_k_search_);
     n.compute(*normals);
     pcl::concatenateFields(*cloud, *normals, *cloud_normals);
 }
 
-void PointToPlaneICP::run(const pcl::PointCloud<pcl::PointXYZI>::Ptr &current_scan, 
-                          const pcl::PointCloud<pcl::PointXYZI>::Ptr &previous_scan)
+void PointToPlaneICP::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr &current_scan, 
+                                   const std::vector<double>& oxts_data)
 {
+    // Filter the incoming point cloud
+    filterPointCloud(current_scan);
+
+    if (!previous_scan_) {
+        // First frame: cache and return
+        previous_scan_ = current_scan;
+        return;
+    }
+
     // FIX 1: Allocate as PointXYZ, not PointXYZI
     pcl::PointCloud<pcl::PointXYZ>::Ptr current_pcd(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr previous_pcd(new pcl::PointCloud<pcl::PointXYZ>);
 
-    // TODO - Skip the copy by modifying the cloud_with_normal function to take PointXYZI and output PointNormal with intensity field.
     // PCL strips the intensity field automatically during this copy
     pcl::copyPointCloud(*current_scan, *current_pcd);
-    pcl::copyPointCloud(*previous_scan, *previous_pcd);
+    pcl::copyPointCloud(*previous_scan_, *previous_pcd);
 
     auto current_scan_normals = pcl::PointCloud<pcl::PointNormal>::Ptr(new pcl::PointCloud<pcl::PointNormal>);
     auto previous_scan_normals = pcl::PointCloud<pcl::PointNormal>::Ptr(new pcl::PointCloud<pcl::PointNormal>);
 
-    // TODO - Cache the current normal for next iteration
     cloud_with_normal(current_pcd, current_scan_normals);
     cloud_with_normal(previous_pcd, previous_scan_normals);
 
-    // TODO - Put it in the constructor to initialize it only once 
     pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal> p_icp;
     
     p_icp.setInputSource(current_scan_normals);
     p_icp.setInputTarget(previous_scan_normals);
-    p_icp.setTransformationEpsilon(1e-10); 
-    p_icp.setMaxCorrespondenceDistance(2.0); // 2.0 meters
-    p_icp.setEuclideanFitnessEpsilon(0.001);
-    p_icp.setMaximumIterations(35); 
+    p_icp.setTransformationEpsilon(transformation_epsilon_);
+    p_icp.setMaxCorrespondenceDistance(max_correspondence_distance_);
+    p_icp.setEuclideanFitnessEpsilon(euclidean_fitness_epsilon_);
+    p_icp.setMaximumIterations(max_iterations_);
     
     pcl::PointCloud<pcl::PointNormal> aligned_cloud;
     p_icp.align(aligned_cloud);
@@ -70,6 +76,9 @@ void PointToPlaneICP::run(const pcl::PointCloud<pcl::PointXYZI>::Ptr &current_sc
     Eigen::Matrix4f local_transform = p_icp.getFinalTransformation();
     
     global_pose = global_pose * local_transform; 
+    
+    // Update previous scan for next iteration
+    previous_scan_ = current_scan;
 }
 
 void PointToPlaneICP::savePoseToFile(const std::string& filepath) const {
