@@ -9,6 +9,13 @@ The algorithm includes:
 2. Extended Kalman filter (EKF) to fuse LiDAR, GPS, and IMU pose estimation. [IMPLEMENTED]
 3. Optuna-based automated hyperparameter optimization. [IMPLEMENTED]
 
+## Algorithm Deep-Dives
+
+| Algorithm | Readme |
+|-----------|--------|
+| **ICP** — Point-to-plane iterative closest point, data association, SVD pose estimation | [readme/icp.md](readme/icp.md) |
+| **EKF** — Predict/update cycle, covariance, innovation, Jacobians, sensor fusion, parameter tuning | [readme/ekf.md](readme/ekf.md) |
+
 ## Usage
 
 1. Clone the repository and navigate to the project directory.
