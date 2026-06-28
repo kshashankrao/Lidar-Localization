@@ -17,7 +17,6 @@ public:
                     double ekf_process_noise,
                     double ekf_gps_noise,
                     double ekf_icp_noise,
-                    double ekf_imu_noise,
                     const std::string& localization_method);
 
     void processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& current_scan,
@@ -33,7 +32,6 @@ private:
     double ekf_process_noise_;
     double ekf_gps_noise_;
     double ekf_icp_noise_;
-    double ekf_imu_noise_;
     std::string localization_method_;
     
     Eigen::Matrix4f global_pose_;
@@ -50,5 +48,4 @@ private:
     std::mt19937 random_generator_;
     std::normal_distribution<double> noise_dist_xy_;
     std::normal_distribution<double> noise_dist_z_;
-    std::normal_distribution<double> noise_dist_rpy_;
 };

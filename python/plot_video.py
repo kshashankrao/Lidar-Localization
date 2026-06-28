@@ -19,7 +19,7 @@ def main():
         
     gt_poses_all = KittiDataLoader.load_gt_poses(config["GT_POSE_PATH"])
     
-    methods = ["ICP", "EKF_GPS", "EKF_IMU"]
+    methods = ["ICP", "EKF_GPS", "EKF_ICP"]
     est_poses_dict = {}
     
     for m in methods:
@@ -36,10 +36,10 @@ def main():
     gt_xy = np.array([[p[0,3], p[1,3]] for p in gt_poses])
     icp_xy = np.array([[p[0,3], p[1,3]] for p in est_poses_dict["ICP"]])
     gps_xy = np.array([[p[0,3], p[1,3]] for p in est_poses_dict["EKF_GPS"]])
-    imu_xy = np.array([[p[0,3], p[1,3]] for p in est_poses_dict["EKF_IMU"]])
+    imu_xy = np.array([[p[0,3], p[1,3]] for p in est_poses_dict["EKF_ICP"]])
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    ax.set_title("Lidar Localization Comparison (ICP vs EKF_GPS vs EKF_IMU)")
+    ax.set_title("Lidar Localization Comparison (ICP vs EKF_GPS vs EKF_ICP)")
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     ax.grid(True)
@@ -51,8 +51,8 @@ def main():
     
     line_gt, = ax.plot([], [], 'k-', label='Ground Truth', linewidth=2)
     line_icp, = ax.plot([], [], 'r--', label='ICP Only', alpha=0.8)
-    line_gps, = ax.plot([], [], 'g-', label='EKF ICP+GPS', alpha=0.8)
-    line_imu, = ax.plot([], [], 'b-', label='EKF ICP+IMU', alpha=0.8)
+    line_gps, = ax.plot([], [], 'g-', label='EKF IMU + GPS', alpha=0.8)
+    line_imu, = ax.plot([], [], 'b-', label='EKF IMU + ICP', alpha=0.8)
     
     point_gt, = ax.plot([], [], 'ko')
     point_icp, = ax.plot([], [], 'ro')

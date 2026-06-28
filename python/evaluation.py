@@ -40,7 +40,7 @@ def run_eval(method: str, base_cfg: dict, gt_poses: list) -> tuple:
     tmp_cfg.close()
 
     t0 = time.time()
-    success = run_binary(BINARY_PATH, tmp_cfg.name)
+    success = run_binary(BINARY_PATH, tmp_cfg.name, timeout=1800)
     elapsed = time.time() - t0
 
     if not success or not os.path.exists(tmp_poses):
@@ -67,7 +67,7 @@ def main():
     gt_poses = KittiDataLoader.load_gt_poses(base_cfg["GT_POSE_PATH"])
     print(f"Loaded {len(gt_poses)} GT frames.")
 
-    methods = ["ICP", "EKF_GPS", "EKF_IMU"]
+    methods = ["ICP", "EKF_GPS", "EKF_ICP"]
     results = {}
 
     for method in methods:

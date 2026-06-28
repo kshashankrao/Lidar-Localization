@@ -2,12 +2,15 @@
 
 ## The Big Picture
 
-Imagine you are driving blindfolded and someone is giving you two pieces of information:
+Imagine you are driving and you have three sources of information:
 
-1. A **physicist friend** who knows your speed and direction and says *"based on your last position and how fast you've been going, you should be HERE now"*.
-2. A **GPS device** that occasionally pings and says *"I see you HERE"* (but it's noisy and sometimes off by a few meters).
+1. A **physicist** who, knowing your last position and current speed, says *"based on kinematics alone, you should be HERE now."* This is your **prediction** — pure physics, no sensor needed.
+2. A **LiDAR scanner** that matches the current point cloud against the previous one and says *"I see you moved exactly THIS far and rotated THIS much."* This is your primary correction — local and very precise, but it drifts over long distances.
+3. A **GPS** (or **IMU**) that gives an independent global measurement — GPS for absolute position, IMU for absolute orientation. This is your secondary correction — it fights long-term drift.
 
-You wouldn't blindly trust either one. You'd weigh them — trust the physicist when the GPS is clearly wrong, trust the GPS when you've been driving for too long without a fix. **That weighing process is exactly what the EKF does.**
+You don't blindly trust any one source. You weigh all three according to how confident you are in each. **That weighing process is exactly what the EKF does.**
+
+> **Important — What IMU does here:** In this project, the IMU measurements (linear velocity and angular velocity) drive the *prediction* step. This provides a high-rate, smooth kinematic estimate of the vehicle's motion. ICP and GPS are then used in the update step to correct any drift that accumulates from integrating the IMU data.
 
 ---
 
@@ -49,17 +52,11 @@ The predict step answers: *given where I was and how fast I was going, where am 
 
 ### The Motion Model
 
-We use a simple constant-velocity kinematic model, encoded as a **state transition matrix** F:
+We use a **kinematic motion model** driven by the vehicle's IMU measurements (forward/lateral/upward velocity $v$ and angular velocity $\omega$). The non-linear state transition function $f$ is:
+$$\mathbf{x}_{k|k-1} = f(\mathbf{x}_{k-1|k-1}, \mathbf{u}_k, \Delta t)$$
+Where $\mathbf{u}_k = [v_f, v_l, v_u, \omega_f, \omega_l, \omega_u]^T$.
 
-$$\mathbf{x}_{k|k-1} = F \cdot \mathbf{x}_{k-1|k-1}$$
-
-The key entries in F are the off-diagonal `dt` terms:
-
-- `F(0,3) = dt` encodes: `px_new = px_old + vx * dt`
-- `F(1,4) = dt` encodes: `py_new = py_old + vy * dt`
-- `F(2,5) = dt` encodes: `pz_new = pz_old + vz * dt`
-
-This is just **kinematics** — position updates using velocity. Velocities and orientations are assumed constant between timesteps (they'll be corrected in the update step).
+This is just **kinematics** — the vehicle's body-frame velocities are rotated into the world frame using its current orientation (roll, pitch, yaw) and integrated over time $dt$ to update the position. The angular velocities are directly integrated to update the orientation.
 
 ### Predicting the Covariance
 
@@ -68,7 +65,7 @@ $$P_{k|k-1} = F \cdot P_{k-1|k-1} \cdot F^T + Q$$
 | Term | Intuition |
 |------|-----------|
 | $P$ | **"How unsure am I?"** — a 9x9 matrix capturing our uncertainty about every element of the state, and how errors in one dimension correlate with others |
-| $F \cdot P \cdot F^T$ | Propagates existing uncertainty through the motion model — if I was uncertain about velocity, now I'm also uncertain about the new position |
+| $F_j \cdot P \cdot F_j^T$ | Propagates existing uncertainty through the linearized motion model using the Jacobian $F_j$ — if I was uncertain about orientation, now I'm also uncertain about the new position because position depends on orientation |
 | $Q$ | **Process noise** — uncertainty we add every step because our model is imperfect (the real world isn't perfectly constant-velocity) |
 
 > **Intuition for P (Covariance):** Think of P as the **numerical memory of all past errors**. If the filter has been drifting to the right for the past 5 seconds, P gets large in the `px` direction — it "remembers" it can't trust itself in that direction. A large P value means *"I've been wrong here before, take my prediction with a grain of salt."*
@@ -91,13 +88,7 @@ H = [ 1  0  0  0  0  0   0    0    0 ]
     [ 0  0  1  0  0  0   0    0    0 ]
 ```
 
-**IMU** measures only orientation → H_IMU is 3x9:
-```
-     px py pz vx vy vz roll pitch yaw
-H = [ 0  0  0  0  0  0   1    0    0 ]
-    [ 0  0  0  0  0  0   0    1    0 ]
-    [ 0  0  0  0  0  0   0    0    1 ]
-```
+**IMU** drives the prediction step, so it is treated as an input $\mathbf{u}$, not a measurement $\mathbf{z}$.
 
 **ICP** (LiDAR) measures position + orientation → H_ICP is 6x9.
 
@@ -201,29 +192,55 @@ $$P_{k|k-1} = J_f \cdot P_{k-1|k-1} \cdot J_f^T + Q$$
 
 Similarly, if the measurement function `h(x)` is nonlinear (e.g., bearing-angle cameras), we compute J_h and use it in place of H.
 
-> **In this project:** The motion model is already linear (constant velocity), so F is exact — no Jacobian needed for prediction. The sensors (GPS, IMU, ICP) provide measurements that already live in state space, so H is also linear and exact. In a more complex EKF (e.g., fusing camera bearing measurements or full IMU pre-integration), you would compute Jacobians at every single timestep.
+In this project, the motion model relies on body-frame velocities which are rotated into the world frame using the current orientation angles. This makes the function non-linear (involving sine and cosine of the orientation).
+Instead of calculating the analytical Jacobian by hand (which is tedious and error-prone), we compute the Jacobian **numerically** using central finite differences:
+
+```cpp
+// For each state variable i:
+x_plus(i) += eps;
+x_minus(i) -= eps;
+f_plus = motionModel(x_plus, ...);
+f_minus = motionModel(x_minus, ...);
+F_j.col(i) = (f_plus - f_minus) / (2.0 * eps);
+```
+
+This matrix $F_j$ then replaces $F$ in the covariance prediction equation.
 
 ---
 
-## Complete EKF Cycle — Summary
+## Complete EKF Cycle — This Implementation
+
+This is the **actual per-frame execution order** in `EKFLocalization.cpp`:
 
 ```
                    +--------------------------------------+
 INITIALIZATION     |  x0 = [first ICP pose]               |
-                   |  P0 = 0.1 * I (low initial uncertainty)|
+(first frame only) |  P0 = 0.1 * I                        |
                    +-------------------+------------------+
                                        |
                    +-------------------v------------------+
-    PREDICT        |  x_pred = F * x         (kinematics) |
-    (every dt)     |  P_pred = F*P*Ft + Q  (uncertainty up)|
+    PREDICT        |  F_j = Numerical_Jacobian(x, u)      |  <-- IMU driven kinematics
+    (every frame)  |  x_pred = f(x, u)                    |  
+                   |  P_pred = F_j*P*F_j^T + Q            |
                    +-------------------+------------------+
                                        |
                    +-------------------v------------------+
-    UPDATE         |  y = z - H*x_pred      (innovation)  |
-    (on sensor)    |  S = H*P*Ht + R    (total variance)  |
-                   |  K = P*Ht*S^-1       (Kalman gain)   |
-                   |  x = x_pred + K*y  (state update)    |
-                   |  P = (I - K*H)*P  (uncertainty down) |
+    UPDATE #1      |  z_icp = [px,py,pz, roll,pitch,yaw]  |  <-- always runs
+    (ICP, always)  |  y = z_icp - H_icp * x_pred          |
+                   |  K = P*H^T*(H*P*H^T + R_icp)^-1      |
+                   |  x = x + K*y                         |
+                   |  P = (I - K*H)*P                     |
+                   +-------------------+------------------+
+                                       |
+                   +-------------------v------------------+
+    UPDATE #2      |  if EKF_GPS:                         |  <-- fuses GPS position
+    (GPS,          |    z_gps = [px,py,pz]                |      
+     conditional)  |    update with H_gps, R_gps          |      
+                   +-------------------+------------------+
+                                       |
+                   +-------------------v------------------+
+    FEEDBACK       |  Push corrected state back to ICP    |  <-- ICP uses EKF pose
+                   |  as its new starting point           |      next frame
                    +-------------------+------------------+
                                        |
                                   (loop forever)
@@ -233,15 +250,23 @@ INITIALIZATION     |  x0 = [first ICP pose]               |
 
 ## Sensor Fusion in This Project
 
-Three sensor modalities are fused:
+### Role of each sensor
 
-| Sensor | Measures | Noise Param | Strength | Weakness |
-|--------|----------|-------------|----------|----------|
-| **ICP (LiDAR)** | Position + Orientation (6D) | `icp_noise` | Very accurate locally | Slow, accumulates drift globally |
-| **GPS** | Position only (3D) | `gps_noise` | Global anchor, prevents drift | Noisy (+-3m synthetic noise added) |
-| **IMU** | Orientation only (3D) | `imu_noise` | Fast, direct angle measurement | Gyro bias causes rotational drift |
+| Sensor | EKF Step | What it provides | Noise Param |
+|--------|----------|-----------------|-------------|
+| **IMU kinematics** | **Predict** | A physics-based estimate using body-frame velocities | `process_noise` (Q) |
+| **ICP (LiDAR)** | **Update #1** (always) | Full 6D pose: position + orientation, matched from point clouds | `icp_noise` |
+| **GPS** | **Update #2** (EKF_GPS mode) | Absolute 3D position — fights global positional drift | `gps_noise` |
 
-The EKF naturally handles sensors of different dimensionality — each sensor has its own H matrix that "picks out" the relevant rows of the state vector.
+### Why IMU is in the predict step
+
+In a canonical robotics EKF, the IMU measurements drive the prediction model. This provides a fast, high-rate pose estimate based entirely on integrating physical kinematics. However, any slight bias in the IMU (especially the gyroscope) gets integrated over time, causing the pose to drift. 
+
+To solve this, the slower but absolute sensors (like LiDAR ICP or GPS) are used in the update step to act as correctors. By tuning the noise parameters, the EKF learns to trust the smoothness of the IMU in the short term, but trust the absolute measurements of the LiDAR/GPS in the long term.
+
+### The ICP feedback loop
+
+Note the final step in each frame: the EKF-corrected pose is **pushed back into ICP** as its new global pose before the next frame runs. This means ICP and EKF are tightly coupled — ICP provides the measurement, EKF smooths it, and ICP inherits the smoothed result as its starting point for the next scan match.
 
 ---
 
@@ -299,7 +324,7 @@ This is the fastest way to diagnose a poorly tuned filter by just looking at the
 | Trajectory drifts and never corrects to GPS/ICP | R too high (ignoring sensors) or Q too low | Decrease `sensor_noise`, or increase `process_noise` |
 | Filter reacts violently to a single bad reading | R too low, sensor outlier not rejected | Increase `sensor_noise`, add outlier gating |
 | Trajectory looks smooth but drifts globally | Q too low — filter overconfident, not pulling toward GPS | Increase `process_noise` |
-| Rotational drift only (position OK) | `EKF_IMU_NOISE` too high — IMU orientation corrections ignored | Decrease `EKF_IMU_NOISE` |
+| Rotational drift only (position OK) | ICP parameters are bad, or process noise is too low | Adjust ICP/process noise |
 | Large jump at the very start | Initial P too high — filter overcorrects on first sensor update | Lower initial P in `init()` |
 
 ---
@@ -312,7 +337,6 @@ If you are tuning by hand, use the **variance = std_dev²** rule to initialize y
 
 - GPS accuracy: if you expect ±3 m position error → `EKF_GPS_NOISE = 9.0`
 - ICP accuracy: if ICP gives ±0.1 m position error → `EKF_ICP_NOISE = 0.01`
-- IMU accuracy: if IMU gives ±1° orientation error → `EKF_IMU_NOISE = ~0.0003` (in radians²)
 
 **Step 2: Set process noise relative to your best sensor**
 

@@ -23,7 +23,7 @@ The algorithm includes:
    ```bash
    ./setup.sh
    ``` 
-3. Set the data path in `config/config.json`. You can also set `LOCALIZATION_METHOD` to `"ICP"`, `"EKF_GPS"`, or `"EKF_IMU"`.
+3. Set the data path in `config/config.json`. You can also set `LOCALIZATION_METHOD` to `"ICP"`, `"EKF_GPS"`, or `"EKF_ICP"`.
 4. Build the C++ executable.
     ```bash
     mkdir build
@@ -52,20 +52,19 @@ Frames Evaluated: 1000
 
 | Configuration | Translation Error (%) | Rotation Error (deg/100m) |
 | :--- | :--- | :--- |
-| **ICP Only** | 6.998 | 15.722 |
-| **EKF ICP + GPS** | 7.888 | 16.046 |
-| **EKF ICP + IMU** | 6.961 | 58.280 |
+| **ICP Only** | 6.686 | 16.258 |
+| **EKF IMU + GPS** | 141.793 | 124.034 |
+| **EKF IMU + ICP** | 6.190 | 15.672 |
 
 ## Demo
 
 ![Trajectory Comparison](readme/comparison.gif)
 
-### Observation: KPIs vs. Global Trajectory
-You might notice an interesting phenomenon: **ICP Only** has the best KPI scores (Relative Pose Error), but visually drifts the most in the video. Why?
+### Observation: Parameter Tuning vs Evaluation
 
-* **Relative Pose Error (RPE):** Our KPIs measure *frame-to-frame* accuracy. ICP is incredibly smooth and precise locally, achieving the best RPE. However, lacking a global anchor, its tiny 0.1% local errors accumulate over thousands of frames, resulting in massive global drift by the end of the trajectory.
-* **Absolute Trajectory Error (ATE):** The **EKF ICP + GPS** configuration uses the GPS as a global anchor. Even though we injected a severe ±3m of synthetic noise into the GPS, the EKF prevents global drift, allowing it to perfectly track the true shape of the map. However, balancing the smooth ICP with the noisy GPS causes microscopic frame-to-frame jitter, which slightly degrades its RPE KPI despite being globally superior.
+* **Parameter Optimization:** Using Optuna, the pipeline was specifically optimized for the **EKF IMU + ICP** configuration. As a result, the IMU-driven EKF achieved the best translation (6.19%) and rotation (15.67 deg/100m) errors!
+* **Degradation of un-tuned methods:** Because the noise parameters (e.g. `EKF_GPS_NOISE`) were jointly optimized for the IMU-ICP architecture, running the `EKF_GPS` method using these exact same noise parameters resulted in severe degradation. This highlights the importance of tuning filter parameters specifically for the active sensor configuration!
 
 ## Future Work
-1. Run an Optuna parameter sweep specifically to tune the `EKF_IMU_NOISE` parameter to eliminate the rotational drift seen in the IMU configuration.
+1. Run an independent Optuna parameter sweep specifically to tune the `EKF_GPS` method.
 2. Evaluate the pipeline on the full KITTI Odometry Benchmark dataset.

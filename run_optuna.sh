@@ -30,5 +30,5 @@ fi
 
 # Run the Optuna tuning script
 echo "Starting Optuna hyperparameter tuning..."
-python3 python/optuna_tuner.py --n-trials 50 --frames 200
+python3 python/optuna_tuner.py --n-trials 30 --frames 200 --n-jobs 2
 

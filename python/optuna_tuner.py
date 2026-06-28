@@ -86,7 +86,7 @@ def write_trial_config(base_cfg: dict, trial_params: dict, frames: int, out_pose
     return tmp.name
 
 
-def run_binary(binary_path: str, config_file: str, timeout: int = 3600) -> bool:
+def run_binary(binary_path: str, config_file: str, timeout: int = 300) -> bool:
     """Run the ICP binary with the given config. Returns True on success."""
     try:
         result = subprocess.run(

@@ -64,16 +64,15 @@ int main(int argc, char* argv[])
 
         std::unique_ptr<LocalizationBase> localization;
         
-        if (localization_method == "EKF_GPS" || localization_method == "EKF_IMU") {
+        if (localization_method == "EKF_GPS" || localization_method == "EKF_ICP" || localization_method == "EKF_IMU") {
             double ekf_proc_noise = config.get<double>("EKF_PROCESS_NOISE");
             double ekf_gps_noise = config.get<double>("EKF_GPS_NOISE");
             double ekf_icp_noise = config.get<double>("EKF_ICP_NOISE");
-            double ekf_imu_noise = config.hasKey("EKF_IMU_NOISE") ? config.get<double>("EKF_IMU_NOISE") : 0.05;
             
             localization = std::make_unique<EKFLocalization>(
                 leaf_size, max_correspondence_distance, max_iterations,
                 normal_k_search, transformation_epsilon, euclidean_fitness_epsilon,
-                ekf_proc_noise, ekf_gps_noise, ekf_icp_noise, ekf_imu_noise, localization_method
+                ekf_proc_noise, ekf_gps_noise, ekf_icp_noise, localization_method
             );
             std::cout << "Using " << localization_method << " Localization." << std::endl;
         } else {

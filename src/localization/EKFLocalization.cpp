@@ -16,19 +16,16 @@ EKFLocalization::EKFLocalization(float leaf_size,
                                  double ekf_process_noise,
                                  double ekf_gps_noise,
                                  double ekf_icp_noise,
-                                 double ekf_imu_noise,
                                  const std::string& localization_method)
     : ekf_process_noise_(ekf_process_noise),
       ekf_gps_noise_(ekf_gps_noise),
       ekf_icp_noise_(ekf_icp_noise),
-      ekf_imu_noise_(ekf_imu_noise),
       localization_method_(localization_method),
       global_pose_(Eigen::Matrix4f::Identity()),
       first_gps_received_(false),
       random_generator_(std::random_device{}()),
       noise_dist_xy_(0.0, 3.0),
-      noise_dist_z_(0.0, 10.0),
-      noise_dist_rpy_(0.0, 0.05)
+      noise_dist_z_(0.0, 10.0)
 {
     icp_ = std::make_unique<PointToPlaneICP>(
         leaf_size, max_correspondence_distance, max_iterations,
@@ -92,7 +89,19 @@ void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& c
     // 3. EKF Predict
     // Using a constant time step of 0.1s for KITTI (10Hz)
     double dt = 0.1;
-    ekf_.predict(dt, ekf_process_noise_);
+    
+    // Extract IMU body velocities and angular rates from OXTS
+    double vf = 0.0, vl = 0.0, vu = 0.0;
+    double wf = 0.0, wl = 0.0, wu = 0.0;
+    if (oxts_data.size() >= 23) {
+        vf = oxts_data[8];
+        vl = oxts_data[9];
+        vu = oxts_data[10];
+        wf = oxts_data[20];
+        wl = oxts_data[21];
+        wu = oxts_data[22];
+    }
+    ekf_.predictIMU(dt, ekf_process_noise_, vf, vl, vu, wf, wl, wu);
 
     // 4. Update with ICP
     Eigen::Matrix3f R = icp_pose.block<3,3>(0,0);
@@ -104,29 +113,10 @@ void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& c
     z_icp << icp_pose(0, 3), icp_pose(1, 3), icp_pose(2, 3), r, p, y;
     ekf_.updateICP(z_icp, ekf_icp_noise_);
 
-    // 4. Update with GPS or IMU if available
-    if (oxts_data.size() >= 6) {
-        if (localization_method_ == "EKF_GPS") {
-            Eigen::Vector3d z_gps = convertGpsToLocal(oxts_data[0], oxts_data[1], oxts_data[2]);
-            ekf_.updateGPS(z_gps, ekf_gps_noise_);
-        } else if (localization_method_ == "EKF_IMU") {
-            double roll = oxts_data[3];
-            double pitch = oxts_data[4];
-            double yaw = oxts_data[5];
-
-            // Add synthetic noise
-            roll += noise_dist_rpy_(random_generator_);
-            pitch += noise_dist_rpy_(random_generator_);
-            yaw += noise_dist_rpy_(random_generator_);
-
-            // Align yaw to local frame
-            yaw = yaw - initial_yaw_;
-            while (yaw > M_PI) yaw -= 2.0 * M_PI;
-            while (yaw < -M_PI) yaw += 2.0 * M_PI;
-
-            Eigen::Vector3d z_imu(roll, pitch, yaw);
-            ekf_.updateIMU(z_imu, ekf_imu_noise_);
-        }
+    // 5. Update with GPS if requested
+    if (oxts_data.size() >= 6 && localization_method_ == "EKF_GPS") {
+        Eigen::Vector3d z_gps = convertGpsToLocal(oxts_data[0], oxts_data[1], oxts_data[2]);
+        ekf_.updateGPS(z_gps, ekf_gps_noise_);
     }
 
     // 6. Push EKF corrected pose back to ICP and cache globally
