@@ -61,36 +61,34 @@ Eigen::Vector3d EKFLocalization::convertGpsToLocal(double lat, double lon, doubl
 void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& current_scan,
                                    const std::vector<double>& oxts_data)
 {
-    // 1. Process ICP
-    icp_->processFrame(current_scan, oxts_data);
-    Eigen::Matrix4f icp_pose = icp_->getGlobalPose();
+    if (!first_gps_received_) {
+        icp_->processFrame(current_scan, oxts_data);
+        Eigen::Matrix4f icp_pose = icp_->getGlobalPose();
 
-    // 2. Initialize EKF if not done yet
-    if (oxts_data.size() >= 6 && !first_gps_received_) {
-        lat_0_ = oxts_data[0];
-        lon_0_ = oxts_data[1];
-        alt_0_ = oxts_data[2];
-        initial_yaw_ = oxts_data[5]; // Yaw is at index 5
-        double cos_0 = std::cos(-initial_yaw_);
-        double sin_0 = std::sin(-initial_yaw_);
-        R_align_ << cos_0, -sin_0,
-                    sin_0,  cos_0;
-        
+        if (oxts_data.size() >= 6) {
+            lat_0_ = oxts_data[0];
+            lon_0_ = oxts_data[1];
+            alt_0_ = oxts_data[2];
+            initial_yaw_ = oxts_data[5];
+            double cos_0 = std::cos(-initial_yaw_);
+            double sin_0 = std::sin(-initial_yaw_);
+            R_align_ << cos_0, -sin_0,
+                        sin_0,  cos_0;
+        }
+
         Eigen::VectorXd x0 = Eigen::VectorXd::Zero(9);
         x0(0) = icp_pose(0, 3);
         x0(1) = icp_pose(1, 3);
         x0(2) = icp_pose(2, 3);
-        // Assuming identity rotation initially
         ekf_.init(x0);
-        
+
         first_gps_received_ = true;
+        global_pose_ = icp_pose;
+        return;
     }
 
-    // 3. EKF Predict
-    // Using a constant time step of 0.1s for KITTI (10Hz)
+    // 1. IMU Prediction step: predict state using IMU linear velocities & angular rates
     double dt = 0.1;
-    
-    // Extract IMU body velocities and angular rates from OXTS
     double vf = 0.0, vl = 0.0, vu = 0.0;
     double wf = 0.0, wl = 0.0, wu = 0.0;
     if (oxts_data.size() >= 23) {
@@ -103,7 +101,24 @@ void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& c
     }
     ekf_.predictIMU(dt, ekf_process_noise_, vf, vl, vu, wf, wl, wu);
 
-    // 4. Update with ICP
+    // Convert IMU predicted state to prior pose for LiDAR corrector
+    Eigen::VectorXd pred_state = ekf_.getState();
+    Eigen::AngleAxisf rollAnglePred(pred_state(6), Eigen::Vector3f::UnitX());
+    Eigen::AngleAxisf pitchAnglePred(pred_state(7), Eigen::Vector3f::UnitY());
+    Eigen::AngleAxisf yawAnglePred(pred_state(8), Eigen::Vector3f::UnitZ());
+    Eigen::Matrix4f T_pred = Eigen::Matrix4f::Identity();
+    T_pred.block<3,3>(0,0) = (yawAnglePred * pitchAnglePred * rollAnglePred).matrix();
+    T_pred(0,3) = static_cast<float>(pred_state(0));
+    T_pred(1,3) = static_cast<float>(pred_state(1));
+    T_pred(2,3) = static_cast<float>(pred_state(2));
+
+    // Provide IMU prediction as prior to LiDAR corrector
+    icp_->setGlobalPose(T_pred);
+
+    // 2. LiDAR Corrector step: correct pose using LiDAR scan matching
+    icp_->processFrame(current_scan, oxts_data);
+    Eigen::Matrix4f icp_pose = icp_->getGlobalPose();
+
     Eigen::Matrix3f R = icp_pose.block<3,3>(0,0);
     double r = std::atan2(R(2, 1), R(2, 2));
     double p = std::asin(-R(2, 0));
@@ -113,13 +128,13 @@ void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& c
     z_icp << icp_pose(0, 3), icp_pose(1, 3), icp_pose(2, 3), r, p, y;
     ekf_.updateICP(z_icp, ekf_icp_noise_);
 
-    // 5. Update with GPS if requested
+    // 3. Update with GPS if requested
     if (oxts_data.size() >= 6 && localization_method_ == "EKF_GPS") {
         Eigen::Vector3d z_gps = convertGpsToLocal(oxts_data[0], oxts_data[1], oxts_data[2]);
         ekf_.updateGPS(z_gps, ekf_gps_noise_);
     }
 
-    // 6. Push EKF corrected pose back to ICP and cache globally
+    // 4. Update final global pose from EKF corrected state
     Eigen::VectorXd state = ekf_.getState();
     Eigen::AngleAxisf rollAngle(state(6), Eigen::Vector3f::UnitX());
     Eigen::AngleAxisf pitchAngle(state(7), Eigen::Vector3f::UnitY());
@@ -128,9 +143,9 @@ void EKFLocalization::processFrame(const pcl::PointCloud<pcl::PointXYZI>::Ptr& c
 
     global_pose_.setIdentity();
     global_pose_.block<3,3>(0,0) = R_corrected;
-    global_pose_(0,3) = state(0);
-    global_pose_(1,3) = state(1);
-    global_pose_(2,3) = state(2);
+    global_pose_(0,3) = static_cast<float>(state(0));
+    global_pose_(1,3) = static_cast<float>(state(1));
+    global_pose_(2,3) = static_cast<float>(state(2));
 
     icp_->setGlobalPose(global_pose_);
 }

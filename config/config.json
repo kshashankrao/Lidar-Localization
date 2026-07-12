@@ -1,19 +1,31 @@
 {
+    "_comment_general": "=== General Pipeline & IO Paths ===",
     "GT_POSE_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/oxts/data",
     "PCD_INPUT_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/velodyne_points/data",
+    "OXTS_INPUT_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/oxts/data",
     "KITTI_CALIB_VELO_TO_CAM": "/mnt/d/kitti/2011_10_03_calib/2011_10_03/calib_velo_to_cam.txt",
     "PCD_OUTPUT_PATH": "/mnt/d/DeepLearning/Lidar-Localization/data/pcd_files",
-    "POSES_OUTPUT_PATH": "estimated_poses.txt",
+    "POSES_OUTPUT_PATH": "poses_LOAM.txt",
     "TOTAL_FRAMES_TO_PROCESS": 1000,
+
+    "_comment_algorithm": "=== Algorithm Selection: choose between 'ICP', 'EKF_GPS', 'EKF_ICP', or 'LOAM' ===",
+    "LOCALIZATION_METHOD": "LOAM",
+
+    "_comment_icp": "=== ICP (Iterative Closest Point) Parameters ===",
     "VOXEL_LEAF_SIZE": 0.17782891535696224,
     "MAX_CORRESPONDENCE_DISTANCE": 1.3766732508697173,
     "MAX_ITERATIONS": 51,
     "NORMAL_K_SEARCH": 46,
     "TRANSFORMATION_EPSILON": 8.858623740621367e-12,
     "EUCLIDEAN_FITNESS_EPSILON": 0.034964385835775554,
-    "LOCALIZATION_METHOD": "EKF_ICP",
-    "OXTS_INPUT_PATH": "/mnt/d/kitti/2011_10_03_drive_0027_sync/oxts/data",
+
+    "_comment_ekf": "=== EKF (Extended Kalman Filter) Sensor Fusion Noise Parameters ===",
     "EKF_PROCESS_NOISE": 0.040368370411069075,
     "EKF_GPS_NOISE": 0.07612211176332193,
-    "EKF_ICP_NOISE": 0.009504006342453587
+    "EKF_ICP_NOISE": 0.009504006342453587,
+
+    "_comment_loam": "=== LOAM (Lidar Odometry & Mapping) Resolution & Map Parameters ===",
+    "LOAM_CORNER_LEAF_SIZE": 0.1,
+    "LOAM_SURF_LEAF_SIZE": 0.2,
+    "LOAM_MAP_LEAF_SIZE": 0.25
 }

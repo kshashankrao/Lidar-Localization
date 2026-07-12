@@ -13,12 +13,13 @@ find_package(Eigen3 REQUIRED)
 find_package(MPI REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters registration visualization)
 find_package(nlohmann_json REQUIRED)
+find_package(OpenMP REQUIRED)
 add_definitions(${PCL_DEFINITIONS})
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 
 # Core library sources (excluding main.cpp)
-file(GLOB_RECURSE LIB_SOURCES "src/config/*.cpp" "src/dataloader/*.cpp" "src/ekf/*.cpp" "src/icp/*.cpp" "src/localization/*.cpp")
+file(GLOB_RECURSE LIB_SOURCES "src/config/*.cpp" "src/dataloader/*.cpp" "src/ekf/*.cpp" "src/icp/*.cpp" "src/localization/*.cpp" "src/loam/*.cpp")
 
 add_library(lidar_localization_lib STATIC ${LIB_SOURCES})
 target_include_directories(lidar_localization_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -27,6 +28,7 @@ target_link_libraries(lidar_localization_lib PUBLIC
     ${PCL_LIBRARIES}
     MPI::MPI_C
     nlohmann_json::nlohmann_json
+    OpenMP::OpenMP_CXX
 )
 
 # Set output directory for executable to build/bin BEFORE creating the executable

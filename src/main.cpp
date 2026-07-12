@@ -7,8 +7,13 @@
 #include <sstream>
 #include <pcl/io/pcd_io.h>
 #include <memory>
+#include <chrono>
+#include <numeric>
+#include <algorithm>
+#include <cmath>
 #include "icp/icp.h"
 #include "localization/EKFLocalization.h"
+#include "loam/LOAMLocalization.h"
 
 namespace fs = std::filesystem;
 
@@ -75,6 +80,15 @@ int main(int argc, char* argv[])
                 ekf_proc_noise, ekf_gps_noise, ekf_icp_noise, localization_method
             );
             std::cout << "Using " << localization_method << " Localization." << std::endl;
+        } else if (localization_method == "LOAM") {
+            float corner_leaf_size = config.hasKey("LOAM_CORNER_LEAF_SIZE") ? config.get<float>("LOAM_CORNER_LEAF_SIZE") : 0.2f;
+            float surf_leaf_size   = config.hasKey("LOAM_SURF_LEAF_SIZE") ? config.get<float>("LOAM_SURF_LEAF_SIZE") : 0.4f;
+            float map_leaf_size    = config.hasKey("LOAM_MAP_LEAF_SIZE") ? config.get<float>("LOAM_MAP_LEAF_SIZE") : 0.4f;
+            localization = std::make_unique<LOAMLocalization>(
+                corner_leaf_size, surf_leaf_size, map_leaf_size,
+                max_correspondence_distance, max_iterations
+            );
+            std::cout << "Using LOAM with Loop Closure Localization." << std::endl;
         } else {
             localization = std::make_unique<PointToPlaneICP>(
                 leaf_size, max_correspondence_distance, max_iterations,
@@ -84,6 +98,8 @@ int main(int argc, char* argv[])
         }
 
         int i = 0;
+        std::vector<double> frame_times_ms;
+        frame_times_ms.reserve(total_frames_to_process);
 
         while (i < total_frames_to_process && loader.hasNext()) 
         {
@@ -97,13 +113,50 @@ int main(int argc, char* argv[])
                 continue;
             }
 
+            auto start_t = std::chrono::high_resolution_clock::now();
             localization->processFrame(current_scan, current_oxts);
+            auto end_t = std::chrono::high_resolution_clock::now();
+            double duration_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();
+            frame_times_ms.push_back(duration_ms);
+
             localization->savePoseToFile(estimated_poses_path);
 
             i++;
         }
 
         std::cout << "\nConversion complete! Total files saved: " << i << std::endl;
+
+        if (!frame_times_ms.empty()) {
+            double total_ms = std::accumulate(frame_times_ms.begin(), frame_times_ms.end(), 0.0);
+            double mean_ms = total_ms / frame_times_ms.size();
+            double sq_sum = 0.0;
+            for (double t : frame_times_ms) {
+                sq_sum += (t - mean_ms) * (t - mean_ms);
+            }
+            double stddev_ms = std::sqrt(sq_sum / frame_times_ms.size());
+
+            std::vector<double> sorted_times = frame_times_ms;
+            std::sort(sorted_times.begin(), sorted_times.end());
+            double min_ms = sorted_times.front();
+            double max_ms = sorted_times.back();
+            double p50_ms = sorted_times[static_cast<size_t>(sorted_times.size() * 0.50)];
+            double p90_ms = sorted_times[static_cast<size_t>(sorted_times.size() * 0.90)];
+            double p99_ms = sorted_times[static_cast<size_t>(sorted_times.size() * 0.99)];
+            double fps = 1000.0 / mean_ms;
+
+            std::cout << "\n============================================================" << std::endl;
+            std::cout << "               RUNTIME PERFORMANCE SUMMARY                  " << std::endl;
+            std::cout << "============================================================" << std::endl;
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "Total Frames Processed : " << frame_times_ms.size() << std::endl;
+            std::cout << "Mean Runtime per Frame : " << mean_ms << " ms  (" << fps << " FPS)" << std::endl;
+            std::cout << "Std Dev                : " << stddev_ms << " ms" << std::endl;
+            std::cout << "Min / Max Runtime      : " << min_ms << " ms / " << max_ms << " ms" << std::endl;
+            std::cout << "Median (50th %ile)     : " << p50_ms << " ms" << std::endl;
+            std::cout << "90th %ile Runtime      : " << p90_ms << " ms" << std::endl;
+            std::cout << "99th %ile Runtime      : " << p99_ms << " ms" << std::endl;
+            std::cout << "============================================================" << std::endl;
+        }
         return 0;
     
     } 

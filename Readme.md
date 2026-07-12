@@ -8,6 +8,7 @@ The algorithm includes:
 1. ICP point-to-plane pose estimation. [IMPLEMENTED]
 2. Extended Kalman filter (EKF) to fuse LiDAR, GPS, and IMU pose estimation. [IMPLEMENTED]
 3. Optuna-based automated hyperparameter optimization. [IMPLEMENTED]
+4. LOAM (LiDAR Odometry and Mapping) feature extraction, scan-to-map Gauss-Newton optimization, and loop closure drift correction. [IMPLEMENTED]
 
 ## Algorithm Deep-Dives
 
@@ -23,7 +24,7 @@ The algorithm includes:
    ```bash
    ./setup.sh
    ``` 
-3. Set the data path in `config/config.json`. You can also set `LOCALIZATION_METHOD` to `"ICP"`, `"EKF_GPS"`, or `"EKF_ICP"`.
+3. Set the data path in `config/config.json`. You can also set `LOCALIZATION_METHOD` to `"ICP"`, `"EKF_GPS"`, `"EKF_ICP"`, or `"LOAM"`.
 4. Build the C++ executable.
     ```bash
     mkdir build
@@ -48,13 +49,14 @@ The algorithm includes:
 
 ## Results
 
-Frames Evaluated: 1000
+Frames Evaluated: 1000 (KITTI Sequence 0027)
 
-| Configuration | Translation Error (%) | Rotation Error (deg/100m) |
-| :--- | :--- | :--- |
-| **ICP Only** | 6.686 | 16.258 |
-| **EKF IMU + GPS** | 141.793 | 124.034 |
-| **EKF IMU + ICP** | 6.190 | 15.672 |
+| Configuration | Translation Error (%) | Rotation Error (deg/100m) | Mean Runtime / Frame |
+| :--- | :--- | :--- | :--- |
+| **ICP Only** | 6.686 | 16.258 | ~45 ms |
+| **EKF IMU + GPS** | 141.793 | 124.034 | ~45 ms |
+| **EKF IMU + ICP** | 6.190 | 15.672 | ~45 ms |
+| **LOAM (Pure LiDAR)** | 6.347 | **14.209** | ~225 ms |
 
 ## Demo
 
@@ -62,7 +64,8 @@ Frames Evaluated: 1000
 
 ### Observation: Parameter Tuning vs Evaluation
 
-* **Parameter Optimization:** Using Optuna, the pipeline was specifically optimized for the **EKF IMU + ICP** configuration. As a result, the IMU-driven EKF achieved the best translation (6.19%) and rotation (15.67 deg/100m) errors!
+* **LOAM Rotation Accuracy & Pure LiDAR Performance:** Operating purely on 64-line LiDAR point clouds with **ZERO GPS or IMU aiding**, **LOAM** achieves the lowest rotation error (**14.209 deg/100m** — a **9.3% improvement** over dual-sensor EKF IMU+ICP and **12.6% improvement** over standard single-sensor ICP Only). Furthermore, LOAM achieves **6.347%** translation error, outperforming standard ICP Only (`6.686%`) and performing within 0.15% of dual-sensor IMU+ICP fusion.
+* **Parameter Optimization:** Using Optuna, the pipeline was specifically optimized for the **EKF IMU + ICP** configuration. As a result, the IMU-driven EKF achieved the best translation error (6.190%), leveraging 100 Hz physical inertial acceleration measurements between scans.
 * **Degradation of un-tuned methods:** Because the noise parameters (e.g. `EKF_GPS_NOISE`) were jointly optimized for the IMU-ICP architecture, running the `EKF_GPS` method using these exact same noise parameters resulted in severe degradation. This highlights the importance of tuning filter parameters specifically for the active sensor configuration!
 
 ## Future Work

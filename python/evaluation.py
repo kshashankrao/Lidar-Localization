@@ -67,7 +67,7 @@ def main():
     gt_poses = KittiDataLoader.load_gt_poses(base_cfg["GT_POSE_PATH"])
     print(f"Loaded {len(gt_poses)} GT frames.")
 
-    methods = ["ICP", "EKF_GPS", "EKF_ICP"]
+    methods = ["ICP", "EKF_GPS", "EKF_ICP", "LOAM"]
     results = {}
 
     for method in methods:
