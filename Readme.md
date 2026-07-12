@@ -16,6 +16,17 @@ The algorithm includes:
 |-----------|--------|
 | **ICP** — Point-to-plane iterative closest point, data association, SVD pose estimation | [readme/icp.md](readme/icp.md) |
 | **EKF** — Predict/update cycle, covariance, innovation, Jacobians, sensor fusion, parameter tuning | [readme/ekf.md](readme/ekf.md) |
+| **LOAM** — Curvature feature extraction, Point-to-Line & Point-to-Plane Gauss-Newton optimization, Huber robust weighting | [readme/loam.md](readme/loam.md) |
+
+### LOAM Implementation Description
+
+Our LOAM pipeline (`LOAMLocalization`) decouples 6-DoF LiDAR odometry and mapping into three stages:
+1. **Curvature-Based Feature Extraction (`extractFeatures`)**: Analyzes local scan-ring curvature $c_i$ across horizontal sectors to segregate sharp **Corner/Edge points** ($c_i > 0.5$) and smooth **Planar Surface points** ($c_i < 0.15$).
+2. **Scan-to-Map Gauss-Newton Optimization (`scanToMapOptimization`)**:
+   - **Point-to-Line Residuals**: Matches edge points against 5 nearest corner neighbors in the local keyframe map, solving analytical 6-DoF Jacobians along the edge direction.
+   - **Point-to-Plane Residuals**: Matches surface points against 5 nearest surface neighbors, fitting exact Householder QR unit normals $\hat{\mathbf{n}}$ and minimizing perpendicular distance $\hat{\mathbf{n}}^T \mathbf{p} + d$.
+   - **Huber Robust Kernel**: Applies M-estimator robust weights ($w = \min(1, 0.2 / |r|)$) to suppress foliage and dynamic outliers.
+3. **Sliding-Window Keyframe Map (`detectAndCorrectLoopClosure`)**: Retains an active local map window of recent keyframes (`map_leaf_size_ = 0.25m`) and performs KD-Tree loop closure queries to eliminate accumulated odometry drift.
 
 ## Usage
 
